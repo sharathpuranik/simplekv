@@ -6,7 +6,7 @@ import hmac
 import os
 import tempfile
 
-from decorator import StoreDecorator
+from .decorator import StoreDecorator
 
 
 class _HMACFileReader(object):
@@ -17,7 +17,7 @@ class _HMACFileReader(object):
         # "preload" buffer
         self.buffer = source.read(self.hm.digest_size)
         if not len(self.buffer) == self.hm.digest_size:
-            raise VerificationException('Source does not contain HMAC hash '\
+            raise VerificationException('Source does not contain HMAC hash '
                                         '(too small)')
 
     def read(self, n=None):
@@ -45,8 +45,14 @@ class _HMACFileReader(object):
 
         return rv
 
-    def close():
+    def close(self):
         self.source.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
 
 
 class VerificationException(Exception):
@@ -58,23 +64,25 @@ class VerificationException(Exception):
 class HMACDecorator(StoreDecorator):
     """HMAC authentication and integrity check decorator.
 
-    This decorator overrides the :meth:`get`, :meth:`get_file`, :meth:`open`,
-    :meth:`put` and :meth:`put_file` methods and alters the data that is store
-    in the follow way:
+    This decorator overrides the :meth:`.KeyValueStore.get`,
+    :meth:`.KeyValueStore.get_file`, :meth:`.KeyValueStore.open`,
+    :meth:`.KeyValueStore.put` and :meth:`.KeyValueStore.put_file` methods and
+    alters the data that is store in the follow way:
 
     First, the original data is stored while being fed to an hmac instance. The
     resulting hash is appended to the data as a binary string, every value
-    stored therefore takes up an additional
-    :prop:`HMACDecorator.hmac_digestsize` bytes.
+    stored therefore takes up an additional ``hmac_digestsize`` bytes.
 
-    Upon retrieval using any of :meth:`get`, :meth:`get_file` or :meth:`open`
-    methods, the data is checked as soon as the hash is readable. Since hashes
-    are stored at the end, almost no extra memory is used when using streaming
-    methods. However, :meth:`get_file` and :meth:`open` will only check the
-    hash value once it is read, that is, at the end of the retrieval.
+    Upon retrieval using any of :meth:`.KeyValueStore.get`,
+    :meth:`.KeyValueStore.get_file` or :meth:`.KeyValueStore.open` methods, the
+    data is checked as soon as the hash is readable. Since hashes are stored at
+    the end, almost no extra memory is used when using streaming methods.
+    However, :meth:`.KeyValueStore.get_file` and :meth:`.KeyValueStore.open`
+    will only check the hash value once it is read, that is, at the end of the
+    retrieval.
 
     The decorator will protect against any modification of the stored data and
-    ensures that only those with knowledge of the :attr:`__secret_key`
+    ensures that only those with knowledge of the ``__secret_key``
     can alter any data. The key used to store data is also used to extend the
     HMAC secret key, making it impossible to copy a valid message over to a
     different key.
@@ -84,7 +92,7 @@ class HMACDecorator(StoreDecorator):
         super(HMACDecorator, self).__init__(decorated_store)
 
         self.__hashfunc = hashfunc
-        self.__secret_key = secret_key
+        self.__secret_key = bytes(secret_key)
 
     @property
     def hmac_digestsize(self):
@@ -93,11 +101,11 @@ class HMACDecorator(StoreDecorator):
 
     def __new_hmac(self, key, msg=None):
         if not msg:
-            msg = ''
+            msg = b''
 
         # item key is used as salt for secret_key
         hm = hmac.HMAC(
-            key=key + self.__secret_key,
+            key=key.encode('ascii') + self.__secret_key,
             msg=msg,
             digestmod=self.__hashfunc)
 
@@ -122,7 +130,7 @@ class HMACDecorator(StoreDecorator):
         if isinstance(file, str):
             try:
                 f = open(file, 'wb')
-            except OSError, e:
+            except OSError as e:
                 raise IOError('Error opening %s for writing: %r' % (
                     file, e
                 ))
@@ -151,12 +159,12 @@ class HMACDecorator(StoreDecorator):
         source = self._dstore.open(key)
         return _HMACFileReader(self.__new_hmac(key), source)
 
-    def put(self, key, value):
+    def put(self, key, value, *args, **kwargs):
         # just append hmac and put
         data = value + self.__new_hmac(key, value).digest()
-        return self._dstore.put(key, data)
+        return self._dstore.put(key, data, *args, **kwargs)
 
-    def put_file(self, key, file):
+    def put_file(self, key, file, *args, **kwargs):
         hm = self.__new_hmac(key)
         bufsize = 1024 * 1024
 
@@ -175,7 +183,7 @@ class HMACDecorator(StoreDecorator):
                 source.write(hm.digest())
 
             # after the file has been closed, hand it over
-            return self._dstore.put_file(key, file)
+            return self._dstore.put_file(key, file, *args, **kwargs)
         else:
             tmpfile = tempfile.NamedTemporaryFile(delete=False)
             try:
@@ -190,6 +198,8 @@ class HMACDecorator(StoreDecorator):
                 tmpfile.write(hm.digest())
                 tmpfile.close()
 
-                return self._dstore.put_file(key, tmpfile.name)
+                return self._dstore.put_file(
+                    key, tmpfile.name, *args, **kwargs
+                )
             finally:
                 os.unlink(tmpfile.name)

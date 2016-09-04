@@ -1,8 +1,4 @@
 include README.rst
-include docs/index.rst
-recursive-include docs *
-recursive-exclude docs *.pyc
-recursive-exclude docs *.pyo
-prune docs/_build
-prune docs/_themes/.git
+include LICENSE
 global-exclude *.swp
+exclude boto_credentials.ini

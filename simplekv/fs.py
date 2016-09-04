@@ -3,19 +3,19 @@
 
 import os
 import shutil
-import urllib
 
-from . import UrlKeyValueStore
+from . import KeyValueStore, UrlMixin
+from ._compat import url_quote
 
 
-class FilesystemStore(UrlKeyValueStore):
+class FilesystemStore(KeyValueStore, UrlMixin):
     """Store data in files on the filesystem.
 
     The *FilesystemStore* stores every value as its own file on the filesystem,
     all under a common directory.
 
-    Any call to :func:`url_for` will result in a `file://`-URL pointing towards
-    the internal storage to be generated.
+    Any call to :meth:`.url_for` will result in a `file://`-URL pointing
+    towards the internal storage to be generated.
     """
     def __init__(self, root, perm=None, **kwargs):
         """Initialize new FilesystemStore
@@ -37,12 +37,12 @@ class FilesystemStore(UrlKeyValueStore):
         self.bufsize = 1024 * 1024  # 1m
 
     def _build_filename(self, key):
-        return os.path.join(self.root, key)
+        return os.path.abspath(os.path.join(self.root, key))
 
     def _delete(self, key):
         try:
             os.unlink(self._build_filename(key))
-        except OSError, e:
+        except OSError as e:
             if not e.errno == 2:
                 raise
 
@@ -51,8 +51,8 @@ class FilesystemStore(UrlKeyValueStore):
         os.umask(current_umask)
 
         perm = self.perm
-        if None == self.perm:
-            perm = 0666 & (0777 ^ current_umask)
+        if self.perm is None:
+            perm = 0o666 & (0o777 ^ current_umask)
 
         os.chmod(filename, perm)
 
@@ -63,7 +63,7 @@ class FilesystemStore(UrlKeyValueStore):
         try:
             f = open(self._build_filename(key), 'rb')
             return f
-        except IOError, e:
+        except IOError as e:
             if 2 == e.errno:
                 raise KeyError(key)
             else:
@@ -83,7 +83,7 @@ class FilesystemStore(UrlKeyValueStore):
 
         # when using umask, correct permissions are automatically applied
         # only chmod is necessary
-        if None != self.perm:
+        if self.perm is not None:
             self._fix_permissions(target)
 
         return key
@@ -99,7 +99,7 @@ class FilesystemStore(UrlKeyValueStore):
     def _url_for(self, key):
         full = os.path.abspath(self._build_filename(key))
         parts = full.split(os.sep)
-        location = '/'.join(urllib.quote(p, safe='') for p in parts)
+        location = '/'.join(url_quote(p, safe='') for p in parts)
         return 'file://' + location
 
     def keys(self):
@@ -118,7 +118,7 @@ class WebFilesystemStore(FilesystemStore):
     >>> webserver_url_prefix = 'https://some.domain.invalid/files/'
     >>> webserver_root = '/var/www/some.domain.invalid/www-data/files/'
     >>> store = WebFilesystemStore(webserver_root, webserver_url_prefix)
-    >>> print store.url_for('some_key')
+    >>> print(store.url_for('some_key'))
     https://some.domain.invalid/files/some_key
 
     Note that the prefix is simply prepended to the relative URL for the key.
@@ -132,7 +132,7 @@ class WebFilesystemStore(FilesystemStore):
     >>> webserver_root = '/var/www/some.domain.invalid/www-data/files/'
     >>> prefix_func = lambda store, key: webserver_url_prefix
     >>> store = WebFilesystemStore(webserver_root, prefix_func)
-    >>> print store.url_for('some_key')
+    >>> print(store.url_for('some_key'))
     https://some.domain.invalid/files/some_key
     """
     def __init__(self, root, url_prefix, **kwargs):
@@ -153,4 +153,4 @@ class WebFilesystemStore(FilesystemStore):
             stem = self.url_prefix(self, key)
         else:
             stem = self.url_prefix
-        return stem + urllib.quote(rel, safe='')
+        return stem + url_quote(rel, safe='')

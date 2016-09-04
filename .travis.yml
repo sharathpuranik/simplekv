@@ -1,0 +1,13 @@
+language: python
+env:
+- TOXENV=py27
+- TOXENV=py33
+install: pip install tox
+script: tox
+services:
+  - redis-server
+  - memcached
+  - mongodb
+before_script:
+  - psql -c 'create database simplekv_test;' -U postgres
+  - mysql -e 'create database simplekv_test;'

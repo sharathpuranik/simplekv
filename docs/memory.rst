@@ -7,6 +7,18 @@ playing around with *simplekv*.
 .. autoclass:: simplekv.memory.DictStore
    :members:
 
+redis-backend
+=============
+The redis_-backend requires :py:mod:`redis` to be installed and uses a
+redis_-database as a backend.
+
+Currently, simplekv targets the latest stable redis version, but since it uses
+very few commands available, it should work on older stables as well. Note that
+some features are unsupported on older redis_-versions (such as sub-second
+accuracy for TTL values on redis_ < 2.6) and will cause redis to complain.
+
+.. autoclass:: simplekv.memory.redisstore.RedisStore
+
 memcached-backend
 =================
 The memcached_-backend is not fully
@@ -41,4 +53,5 @@ volatile as memcache itself and best used for caching.
 .. _python-memcached: http://pypi.python.org/pypi/python-memcached
 .. _pylibmc: http://sendapatch.se/projects/pylibmc/
 .. _memcached: http://memcached.org
+.. _redis: http://redis.io
 .. [1] The memcached_ protocol does not support listing/iterating over keys.
